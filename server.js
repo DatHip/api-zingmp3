@@ -1,5 +1,5 @@
 const express = require("express")
-const { zing } = require("zingmp3-api-next")
+const { zing } = require("zingmp3-api-full")
 const ZingController = require("./controllers/ZingController")
 var cors = require("cors")
 
