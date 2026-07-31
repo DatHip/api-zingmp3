@@ -9,16 +9,19 @@ const ZingController = require("./controllers/ZingController")
 const app = express()
 const router = express.Router()
 
-const ALLOWED_ORIGINS = (process.env.CORS_ORIGINS || "http://localhost:3000")
+const ALLOWED_ORIGINS = (process.env.CORS_ORIGINS || "")
    .split(",")
    .map((s) => s.trim())
    .filter(Boolean)
+
+const LOCALHOST_RE = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/
 
 app.use(
    cors({
       origin: (origin, cb) => {
          if (!origin) return cb(null, true)
          if (ALLOWED_ORIGINS.includes("*") || ALLOWED_ORIGINS.includes(origin)) return cb(null, true)
+         if (LOCALHOST_RE.test(origin)) return cb(null, true)
          return cb(new Error("CORS: origin not allowed"))
       },
    })
