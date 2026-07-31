@@ -1,9 +1,9 @@
 const { zing } = require("../zingClient")
+const { cachedFetch } = require("../cache")
 
 const wrap = (fn) => async (req, res, next) => {
    try {
-      const data = await fn(req)
-      res.json(data)
+      await cachedFetch(req, res, () => fn(req))
    } catch (err) {
       next(err)
    }
