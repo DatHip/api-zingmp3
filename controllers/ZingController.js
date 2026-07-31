@@ -1,122 +1,48 @@
-const { zing } = require("zingmp3-api-next")
+const { zing } = require("../zingClient")
 
-class ZingController {
-   async getHome(req, res) {
-      const data = await zing.get_home()
+const wrap = (fn) => async (req, res, next) => {
+   try {
+      const data = await fn(req)
       res.json(data)
-   }
-   async getPlayList(req, res) {
-      const data = await zing.get_playlist(req.params.id)
-      res.json(data)
-   }
-   async GetSuggestedPlaylists(req, res) {
-      const data = await zing.get_suggested_playlists(req.params.id)
-      res.json(data)
-   }
-
-   async getSong(req, res) {
-      const data = await zing.get_song(req.params.id)
-      res.json(data)
-   }
-
-   async getSongInfo(req, res) {
-      const data = await zing.get_song_info(req.params.id)
-      res.json(data)
-   }
-
-   async getSongLyrics(req, res) {
-      const data = await zing.get_song_lyric(req.params.id)
-      res.json(data)
-   }
-
-   async getHomeChart(req, res) {
-      const data = await zing.get_home_chart()
-      res.json(data)
-   }
-
-   async getNewReleaseChart(req, res) {
-      const data = await zing.get_new_release_chart()
-      res.json(data)
-   }
-
-   async getWeekChart(req, res) {
-      const data = await zing.get_week_chart(req.params.id)
-      res.json(data)
-   }
-
-   async getRadio(req, res) {
-      const data = await zing.get_radio()
-      res.json(data)
-   }
-
-   async getNewFeeds(req, res) {
-      //http://localhost:3000/api/newfeeds?id=IWZ9Z08I&page=3
-      const data = await zing.get_list_by_genre(req.query.id, req.query.page)
-      res.json(data)
-   }
-
-   async getArtist(req, res) {
-      // http://localhost:3000/api/artist/Alan-Walker
-      const data = await zing.get_artist(req.params.name)
-      res.json(data)
-   }
-
-   // The loai
-   async getHub(req, res) {
-      const data = await zing.get_hub_home()
-      res.json(data)
-   }
-
-   async getHubDetail(req, res) {
-      const data = await zing.get_hub_detail(req.params.id)
-      res.json(data)
-   }
-
-   async getTop100(req, res) {
-      const data = await zing.get_top_100()
-      res.json(data)
-   }
-   async getListMv(req, res) {
-      // http://localhost:3000/api/listmv?id=IWZ9Z08I&page=1&count=50
-      const data = await zing.get_list_mv(req.query.id, req.query.page, req.query.count, req.query.sorts)
-      res.json(data)
-   }
-   async getCategoryMv(req, res) {
-      const data = await zing.get_category_mv(req.params.id)
-      res.json(data)
-   }
-   async getMv(req, res) {
-      const data = await zing.get_mv(req.params.id)
-      res.json(data)
-   }
-   async getEvents(req, res) {
-      const data = await zing.get_events()
-      res.json(data)
-   }
-   async getEventInfo(req, res) {
-      const data = await zing.get_event_info(req.params.id)
-      res.json(data)
-   }
-   async getSearchAll(req, res) {
-      const data = await zing.search_all(req.query.keyword)
-      res.json(data)
-   }
-   async getSearchbyType(req, res) {
-      // type: song , video , artist,playlist
-      // page,
-      // count
-      // http://localhost:3000/api/searchtype?keyword=karik&type=video
-      const data = await zing.search_by_type(req.query.keyword, req.query.type, req.query.page, req.query.count)
-      res.json(data)
-   }
-   async getRecommendKeyword(req, res) {
-      const data = await zing.get_recommend_keyword()
-      res.json(data)
-   }
-   async getSuggestionKeyword(req, res) {
-      const data = await zing.get_suggestion_keyword(req.query.keyword)
-      res.json(data)
+   } catch (err) {
+      next(err)
    }
 }
 
-module.exports = new ZingController()
+module.exports = {
+   getHome: wrap(() => zing.getHome()),
+   getPlayList: wrap((req) => zing.getPlaylist(req.params.id)),
+   GetSuggestedPlaylists: wrap((req) => zing.getSuggestedPlaylists(req.params.id)),
+   getSong: wrap((req) => zing.getSong(req.params.id)),
+   getSongInfo: wrap((req) => zing.getSongInfo(req.params.id)),
+   getSongLyrics: wrap((req) => zing.getSongLyric(req.params.id)),
+   getHomeChart: wrap(() => zing.getHomeChart()),
+   getNewReleaseChart: wrap(() => zing.getNewReleaseChart()),
+   getWeekChart: wrap((req) =>
+      zing.getWeekChart(req.params.id, Number(req.query.week) || 0, Number(req.query.year) || 0)
+   ),
+   getRadio: wrap(() => zing.getRadio()),
+   getNewFeeds: wrap((req) => zing.getListByGenre(req.query.id, Number(req.query.page) || 1)),
+   getArtist: wrap((req) => zing.getArtist(req.params.name)),
+   getHub: wrap(() => zing.getHubHome()),
+   getHubDetail: wrap((req) => zing.getHubDetail(req.params.id)),
+   getTop100: wrap(() => zing.getTop100()),
+   getListMv: wrap((req) =>
+      zing.getListMv(
+         req.query.id,
+         Number(req.query.page) || 1,
+         Number(req.query.count) || 15,
+         req.query.sort || "listen"
+      )
+   ),
+   getCategoryMv: wrap((req) => zing.getCategoryMv(req.params.id)),
+   getMv: wrap((req) => zing.getMv(req.params.id)),
+   getEvents: wrap(() => zing.getEvents()),
+   getEventInfo: wrap((req) => zing.getEventInfo(req.params.id)),
+   getSearchAll: wrap((req) => zing.searchAll(req.query.keyword)),
+   getSearchbyType: wrap((req) =>
+      zing.searchByType(req.query.keyword, req.query.type, Number(req.query.page) || 1, Number(req.query.count) || 18)
+   ),
+   getRecommendKeyword: wrap(() => zing.getRecommendKeyword()),
+   getSuggestionKeyword: wrap((req) => zing.getSuggestionKeyword(req.query.keyword)),
+}
