@@ -1,17 +1,11 @@
 const express = require("express")
-const { zing } = require("zingmp3-api-next")
 const ZingController = require("./controllers/ZingController")
-var cors = require("cors")
+const cors = require("cors")
 
-var app = express()
-var router = express.Router()
+const app = express()
+const router = express.Router()
+
 app.use(cors())
-app.use((req, res, next) => {
-   res.setHeader("Access-Control-Allow-Origin", "*")
-   res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE")
-   res.setHeader("Access-Control-Allow-Methods", "Content-Type", "Authorization")
-   next()
-})
 
 router.get("/home", ZingController.getHome)
 router.get("/playlist/:id", ZingController.getPlayList)
@@ -38,12 +32,18 @@ router.get("/searchtype", ZingController.getSearchbyType)
 router.get("/recommendkeyword", ZingController.getRecommendKeyword)
 router.get("/suggestionkeyword", ZingController.getSuggestionKeyword)
 
+app.get("/health", (req, res) => res.json({ status: "ok", uptime: process.uptime() }))
+
 app.use("/api/", router)
-app.use("/", (req, res) => {
-   console.log("Home")
-   res.json("Home")
+
+app.use("/", (req, res) => res.json({ name: "zingmp3-api", ok: true }))
+
+app.use((err, req, res, next) => {
+   console.error("[error]", req.method, req.originalUrl, err?.message || err)
+   res.status(err?.status || 500).json({ err: 1, msg: err?.message || "Internal Server Error" })
 })
 
-app.listen(3000, () => {
-   console.log(`Server start on port`)
+const PORT = process.env.PORT || 5000
+app.listen(PORT, () => {
+   console.log(`Server start on port ${PORT}`)
 })
