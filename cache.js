@@ -63,6 +63,16 @@ function pruneExpired(entry, ttl) {
    return age < ttl * STALE_MULTIPLIER
 }
 
+function setCdnCache(res, ttl) {
+   // Vercel Edge / CDN caching. s-maxage caches at edge for `ttl` seconds;
+   // stale-while-revalidate lets edge serve stale for another `ttl*STALE_MULT`
+   // while asynchronously revalidating.
+   res.setHeader(
+      "Cache-Control",
+      `public, s-maxage=${ttl}, stale-while-revalidate=${ttl * STALE_MULTIPLIER}`
+   )
+}
+
 async function cachedFetch(req, res, fetcher) {
    const key = req.originalUrl
    const ttl = ttlFor(key)
@@ -82,6 +92,8 @@ async function cachedFetch(req, res, fetcher) {
          throw err
       }
    }
+
+   setCdnCache(res, ttl)
 
    const entry = store.get(key)
    const now = Date.now()
