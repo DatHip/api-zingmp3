@@ -15,6 +15,9 @@ const TTL = {
    "/api/recommendkeyword": 3600,
    "/api/songlyrics": 86400,
    "/api/songinfo": 3600,
+   // Signed stream URLs stay valid for hours; 5 min is safe and takes the
+   // hottest path in the app (every play) off the upstream.
+   "/api/song": 300,
    "/api/artist": 1800,
    "/api/playlist": 900,
    "/api/hubdetails": 1800,

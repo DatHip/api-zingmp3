@@ -9,6 +9,11 @@ const cacheModule = require("./cache")
 const app = express()
 const router = express.Router()
 
+// Vercel (and any reverse proxy) forwards the client IP in X-Forwarded-For.
+// Without this, express-rate-limit sees the proxy IP for every request and
+// buckets all traffic together.
+app.set("trust proxy", 1)
+
 const ALLOWED_ORIGINS = (process.env.CORS_ORIGINS || "")
    .split(",")
    .map((s) => s.trim())
@@ -27,7 +32,9 @@ app.use(
    })
 )
 app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: { policy: "cross-origin" } }))
-app.use(compression())
+// Vercel's edge already gzip/brotli-compresses responses. Running compression()
+// inside the function just burns CPU per invocation, so only use it self-hosted.
+if (!process.env.VERCEL) app.use(compression())
 
 app.use(
    "/api/",
@@ -75,7 +82,12 @@ app.use((err, req, res, next) => {
    res.status(err?.status || 500).json({ err: 1, msg: err?.message || "Internal Server Error" })
 })
 
-const PORT = process.env.PORT || 5000
-app.listen(PORT, () => {
-   console.log(`Server start on port ${PORT}`)
-})
+// @vercel/node invokes the exported handler; it never calls listen().
+module.exports = app
+
+if (!process.env.VERCEL) {
+   const PORT = process.env.PORT || 5000
+   app.listen(PORT, () => {
+      console.log(`Server start on port ${PORT}`)
+   })
+}

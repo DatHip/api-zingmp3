@@ -1,5 +1,6 @@
 {
    "version": 2,
+   "regions": ["sin1"],
    "builds": [
       {
          "src": "server.js",
@@ -11,17 +12,6 @@
       {
          "src": "/(.*)",
          "dest": "server.js"
-      }
-   ],
-   "headers": [
-      {
-         "source": "/api/(.*)",
-         "headers": [
-            {
-               "key": "Access-Control-Allow-Credentials",
-               "value": "true"
-            }
-         ]
       }
    ]
 }
