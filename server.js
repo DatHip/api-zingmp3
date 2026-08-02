@@ -1,17 +1,43 @@
 const express = require("express")
-const { zing } = require("zingmp3-api-next")
+const cors = require("cors")
+const compression = require("compression")
+const helmet = require("helmet")
+const rateLimit = require("express-rate-limit")
 const ZingController = require("./controllers/ZingController")
-var cors = require("cors")
+const cacheModule = require("./cache")
 
-var app = express()
-var router = express.Router()
-app.use(cors())
-app.use((req, res, next) => {
-   res.setHeader("Access-Control-Allow-Origin", "*")
-   res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE")
-   res.setHeader("Access-Control-Allow-Methods", "Content-Type", "Authorization")
-   next()
-})
+const app = express()
+const router = express.Router()
+
+const ALLOWED_ORIGINS = (process.env.CORS_ORIGINS || "")
+   .split(",")
+   .map((s) => s.trim())
+   .filter(Boolean)
+
+const LOCALHOST_RE = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/
+
+app.use(
+   cors({
+      origin: (origin, cb) => {
+         if (!origin) return cb(null, true)
+         if (ALLOWED_ORIGINS.includes("*") || ALLOWED_ORIGINS.includes(origin)) return cb(null, true)
+         if (LOCALHOST_RE.test(origin)) return cb(null, true)
+         return cb(new Error("CORS: origin not allowed"))
+      },
+   })
+)
+app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: { policy: "cross-origin" } }))
+app.use(compression())
+
+app.use(
+   "/api/",
+   rateLimit({
+      windowMs: 60 * 1000,
+      max: 120,
+      standardHeaders: true,
+      legacyHeaders: false,
+   })
+)
 
 router.get("/home", ZingController.getHome)
 router.get("/playlist/:id", ZingController.getPlayList)
@@ -38,12 +64,18 @@ router.get("/searchtype", ZingController.getSearchbyType)
 router.get("/recommendkeyword", ZingController.getRecommendKeyword)
 router.get("/suggestionkeyword", ZingController.getSuggestionKeyword)
 
+app.get("/health", (req, res) => res.json({ status: "ok", uptime: process.uptime(), cache: cacheModule.stats() }))
+
 app.use("/api/", router)
-app.use("/", (req, res) => {
-   console.log("Home")
-   res.json("Home")
+
+app.use("/", (req, res) => res.json({ name: "zingmp3-api", ok: true }))
+
+app.use((err, req, res, next) => {
+   console.error("[error]", req.method, req.originalUrl, err?.message || err)
+   res.status(err?.status || 500).json({ err: 1, msg: err?.message || "Internal Server Error" })
 })
 
-app.listen(3000, () => {
-   console.log(`Server start on port`)
+const PORT = process.env.PORT || 5000
+app.listen(PORT, () => {
+   console.log(`Server start on port ${PORT}`)
 })
