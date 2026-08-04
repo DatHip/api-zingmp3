@@ -9,7 +9,13 @@ const cacheModule = require("./cache")
 const app = express()
 const router = express.Router()
 
-const ALLOWED_ORIGINS = (process.env.CORS_ORIGINS || "")
+// This proxy serves one frontend, so its origin is the default rather than
+// something CORS_ORIGINS has to supply. With the env var unset on the deployed
+// backend, every browser request was rejected while curl — which sends no
+// Origin header — kept returning 200, so the failure read as a frontend bug.
+const DEFAULT_ORIGINS = "https://zing-mp3-d4t.vercel.app"
+
+const ALLOWED_ORIGINS = (process.env.CORS_ORIGINS || DEFAULT_ORIGINS)
    .split(",")
    .map((s) => s.trim())
    .filter(Boolean)
@@ -22,7 +28,11 @@ app.use(
          if (!origin) return cb(null, true)
          if (ALLOWED_ORIGINS.includes("*") || ALLOWED_ORIGINS.includes(origin)) return cb(null, true)
          if (LOCALHOST_RE.test(origin)) return cb(null, true)
-         return cb(new Error("CORS: origin not allowed"))
+         // Without an explicit status the handler below falls through to 500,
+         // which makes a rejected origin indistinguishable from a real fault.
+         const err = new Error("CORS: origin not allowed")
+         err.status = 403
+         return cb(err)
       },
    })
 )
