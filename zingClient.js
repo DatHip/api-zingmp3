@@ -86,18 +86,20 @@ async function request(path, params, { suggest = false } = {}) {
       timeout: TIMEOUT_MS,
    })
    if (res.data && typeof res.data === "object" && res.data.err && res.data.err !== 0) {
-      const err = new Error(res.data.msg || `Zing upstream err=${res.data.err}`)
       // Zing answered, and answered correctly — the content just is not
       // available to us. That is not a gateway failure, and calling it 502 cost
       // us twice: the frontend's retry policy only skips 4xx, so every blocked
       // track was fetched four times, and four failures inside the breaker
       // window opened the circuit for that key, turning one unplayable song
       // into five minutes of errors for everyone asking for it.
-      err.status = statusForUpstream(res.data)
+      const status = statusForUpstream(res.data)
+      const err = new Error(messageForUpstream(res.data, status))
+      err.status = status
       err.upstream = res.data
-      // Zing's own message ("Không tìm thấy bài hát này.") is user-facing text
-      // from their JSON body, not an axios message carrying the signed URL, so
-      // it is safe — and useful — to forward verbatim.
+      // Zing's own message is user-facing text from their JSON body, not an
+      // axios message carrying the signed URL, so it is safe to forward — but
+      // see messageForUpstream: for a geo-block it is also wrong, and gets
+      // replaced there.
       err.expose = true
       throw err
    }
@@ -108,17 +110,36 @@ async function request(path, params, { suggest = false } = {}) {
 // observation, so the message is the fallback signal. Anything unrecognised is
 // still a 404 rather than a 502: the request reached Zing and came back with a
 // verdict, which is the one thing a 502 promises did not happen.
+//
+// -1023 is not a disguised geo-block. Checked against both egresses: id
+// ZWZB969F answers -1023 from a Vietnamese IP as well as from the deployment,
+// while Z9WIC660 answers err=0 from Vietnam and is refused from Singapore with
+// the "quốc gia" message instead. So the two failures are distinct, Zing does
+// label the region case explicitly, and -1023 means what it says.
 const UPSTREAM_CODE_STATUS = {
-   "-1023": 404, // "Không tìm thấy bài hát này."
+   "-1023": 404, // "Không tìm thấy bài hát này." — unavailable from Vietnam too.
 }
 
+// 451 Unavailable For Legal Reasons: Zing licenses per country and rejects
+// requests from outside Vietnam for part of the catalogue.
 function statusForUpstream(data) {
    const byCode = UPSTREAM_CODE_STATUS[String(data.err)]
    if (byCode) return byCode
-   // 451 Unavailable For Legal Reasons: Zing licenses per country and rejects
-   // requests from outside Vietnam for part of the catalogue.
    if (typeof data.msg === "string" && /quốc gia/i.test(data.msg)) return 451
    return 404
+}
+
+// "Nội dung này không tải được cho quốc gia của bạn!" is addressed to whoever
+// made the request — which is this proxy in Singapore, not the person reading
+// the toast. A listener sitting in Vietnam gets told their own country is the
+// problem, and the track in fact plays fine from there. Every other upstream
+// message describes the track rather than the caller, so only this one is
+// replaced.
+const GEO_BLOCKED_MSG = "Bài này bị Zing giới hạn theo quốc gia — máy chủ đặt ngoài Việt Nam nên không phát được."
+
+function messageForUpstream(data, status) {
+   if (status === 451) return GEO_BLOCKED_MSG
+   return data.msg || `Zing upstream err=${data.err}`
 }
 
 const SORTS = ["listen", "hot", "new"]
@@ -274,4 +295,4 @@ const zing = {
 // statusForUpstream is exported for the tests: the mapping is the whole reason
 // a blocked track no longer trips the breaker, and it is worth pinning down
 // without standing up an HTTP double for Zing.
-module.exports = { zing, SORTS, SEARCH_TYPES, statusForUpstream }
+module.exports = { zing, SORTS, SEARCH_TYPES, statusForUpstream, messageForUpstream }
