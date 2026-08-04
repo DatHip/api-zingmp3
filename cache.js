@@ -81,6 +81,15 @@ function breakerOpen(key) {
    return Boolean(b && b.openUntil > Date.now())
 }
 
+// The breaker exists to stop hammering an upstream that is down. A verdict
+// Zing delivered on purpose — not found, or licensed out of our region — is
+// not an outage, and counting it would take one permanently unplayable track
+// and open the circuit for every caller of that key.
+function isOutage(err) {
+   const status = err?.status
+   return !(status >= 400 && status < 500)
+}
+
 function recordFail(key) {
    const now = Date.now()
    const b = breaker.get(key) || { fails: [], openUntil: 0 }
@@ -134,7 +143,7 @@ async function cachedFetch(req, res, fetcher) {
          res.setHeader("X-Cache", "BYPASS")
          return res.json(body)
       } catch (err) {
-         recordFail(key)
+         if (isOutage(err)) recordFail(key)
          throw err
       }
    }
@@ -166,7 +175,9 @@ async function cachedFetch(req, res, fetcher) {
                   put(key, body, ttl)
                   recordSuccess(key)
                })
-               .catch(() => recordFail(key))
+               .catch((err) => {
+                  if (isOutage(err)) recordFail(key)
+               })
                .finally(() => inFlight.delete(key))
          }
          return
@@ -188,7 +199,7 @@ async function cachedFetch(req, res, fetcher) {
       res.setHeader("X-Cache", "MISS")
       return res.json(body)
    } catch (err) {
-      recordFail(key)
+      if (isOutage(err)) recordFail(key)
       if (entry) {
          res.setHeader("X-Cache", "STALE-ERROR")
          return res.json(entry.body)

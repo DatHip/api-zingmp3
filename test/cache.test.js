@@ -73,6 +73,23 @@ test("breaker opens after the failure threshold and short-circuits", async () =>
    assert.equal(stats().openBreakers.length, 1)
 })
 
+test("a rejection Zing delivered on purpose never opens the breaker", async () => {
+   const notFound = async () => {
+      const err = new Error("Không tìm thấy bài hát này.")
+      err.status = 404
+      throw err
+   }
+
+   // Well past BREAKER_THRESHOLD: a track that is permanently unavailable must
+   // not take the whole cache key down with it.
+   for (let i = 0; i < 6; i++) {
+      const res = mockRes()
+      await assert.rejects(() => cachedFetch(mockReq("/api/song/ZWZB969F"), res, notFound))
+   }
+
+   assert.deepEqual(stats().openBreakers, [])
+})
+
 test("a stale entry is served immediately and revalidated in the background", async (t) => {
    let calls = 0
    const fetcher = async () => {

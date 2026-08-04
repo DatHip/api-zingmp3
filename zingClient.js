@@ -87,7 +87,13 @@ async function request(path, params, { suggest = false } = {}) {
    })
    if (res.data && typeof res.data === "object" && res.data.err && res.data.err !== 0) {
       const err = new Error(res.data.msg || `Zing upstream err=${res.data.err}`)
-      err.status = 502
+      // Zing answered, and answered correctly — the content just is not
+      // available to us. That is not a gateway failure, and calling it 502 cost
+      // us twice: the frontend's retry policy only skips 4xx, so every blocked
+      // track was fetched four times, and four failures inside the breaker
+      // window opened the circuit for that key, turning one unplayable song
+      // into five minutes of errors for everyone asking for it.
+      err.status = statusForUpstream(res.data)
       err.upstream = res.data
       // Zing's own message ("Không tìm thấy bài hát này.") is user-facing text
       // from their JSON body, not an axios message carrying the signed URL, so
@@ -96,6 +102,23 @@ async function request(path, params, { suggest = false } = {}) {
       throw err
    }
    return res.data
+}
+
+// Zing's numeric codes are undocumented and only a few are known by
+// observation, so the message is the fallback signal. Anything unrecognised is
+// still a 404 rather than a 502: the request reached Zing and came back with a
+// verdict, which is the one thing a 502 promises did not happen.
+const UPSTREAM_CODE_STATUS = {
+   "-1023": 404, // "Không tìm thấy bài hát này."
+}
+
+function statusForUpstream(data) {
+   const byCode = UPSTREAM_CODE_STATUS[String(data.err)]
+   if (byCode) return byCode
+   // 451 Unavailable For Legal Reasons: Zing licenses per country and rejects
+   // requests from outside Vietnam for part of the catalogue.
+   if (typeof data.msg === "string" && /quốc gia/i.test(data.msg)) return 451
+   return 404
 }
 
 const SORTS = ["listen", "hot", "new"]
@@ -248,4 +271,7 @@ const zing = {
    },
 }
 
-module.exports = { zing, SORTS, SEARCH_TYPES }
+// statusForUpstream is exported for the tests: the mapping is the whole reason
+// a blocked track no longer trips the breaker, and it is worth pinning down
+// without standing up an HTTP double for Zing.
+module.exports = { zing, SORTS, SEARCH_TYPES, statusForUpstream }
