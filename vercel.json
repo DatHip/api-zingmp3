@@ -5,7 +5,7 @@
       {
          "src": "server.js",
          "use": "@vercel/node",
-         "config": { "memory": 512, "maxDuration": 10 }
+         "config": { "memory": 512, "maxDuration": 15 }
       }
    ],
    "routes": [
