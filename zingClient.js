@@ -9,7 +9,10 @@ const VERSION = process.env.ZING_VERSION || "1.9.20"
 const UA =
    process.env.ZING_UA ||
    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
-const TIMEOUT_MS = Number(process.env.ZING_TIMEOUT_MS || 8000)
+// A cold request costs two sequential upstream calls (cookie handshake, then
+// the API call), so the per-call timeout must be under half of vercel.json's
+// maxDuration or the function is killed before our own error handling runs.
+const TIMEOUT_MS = Number(process.env.ZING_TIMEOUT_MS || 3500)
 const COOKIE_TTL_MS = Number(process.env.ZING_COOKIE_TTL_MS || 10 * 60 * 1000)
 
 const sha256 = (s) => crypto.createHash("sha256").update(s).digest("hex")
@@ -38,11 +41,12 @@ function sigSearch(path, count, page, type, ct) {
    return hmac512(path + sha256(`count=${count}ctime=${ct}page=${page}type=${type}version=${VERSION}`))
 }
 
-let cookieCache = { value: null, expiresAt: 0 }
+// Caches the in-flight *promise*, not the resolved value: on a cold start every
+// concurrent request arrives before the first handshake resolves, and caching
+// the value would let all of them fire their own handshake.
+let cookieCache = { promise: null, expiresAt: 0 }
 
-async function getCookie() {
-   const now = Date.now()
-   if (cookieCache.value && cookieCache.expiresAt > now) return cookieCache.value
+async function fetchCookie() {
    const res = await axios.get(BASE, {
       headers: { "User-Agent": UA },
       timeout: TIMEOUT_MS,
@@ -53,9 +57,24 @@ async function getCookie() {
       .map((c) => c.split(";")[0])
       .filter(Boolean)
       .join("; ")
-   if (!cookie) throw new Error("Zing cookie handshake failed")
-   cookieCache = { value: cookie, expiresAt: now + COOKIE_TTL_MS }
+   if (!cookie) {
+      const err = new Error("Zing cookie handshake failed")
+      err.status = 502
+      throw err
+   }
    return cookie
+}
+
+function getCookie() {
+   if (cookieCache.promise && cookieCache.expiresAt > Date.now()) return cookieCache.promise
+   const promise = fetchCookie().catch((err) => {
+      // Drop the rejected promise so the next request retries instead of
+      // replaying the same failure until the TTL expires.
+      if (cookieCache.promise === promise) cookieCache = { promise: null, expiresAt: 0 }
+      throw err
+   })
+   cookieCache = { promise, expiresAt: Date.now() + COOKIE_TTL_MS }
+   return promise
 }
 
 async function request(path, params, { suggest = false } = {}) {
@@ -70,9 +89,22 @@ async function request(path, params, { suggest = false } = {}) {
       const err = new Error(res.data.msg || `Zing upstream err=${res.data.err}`)
       err.status = 502
       err.upstream = res.data
+      // Zing's own message ("Không tìm thấy bài hát này.") is user-facing text
+      // from their JSON body, not an axios message carrying the signed URL, so
+      // it is safe — and useful — to forward verbatim.
+      err.expose = true
       throw err
    }
    return res.data
+}
+
+const SORTS = ["listen", "hot", "new"]
+const SEARCH_TYPES = ["song", "playlist", "artist", "video"]
+
+function badArg(msg) {
+   const err = new Error(msg)
+   err.status = 400
+   return err
 }
 
 const zing = {
@@ -146,8 +178,8 @@ const zing = {
    async getListMv(id, page = 1, count = 15, sort = "listen") {
       const path = "/api/v2/video/get/list"
       const type = "genre"
-      const validSorts = ["listen", "hot", "new"]
-      if (!validSorts.includes(sort)) throw new Error("sort must be listen|hot|new")
+      // Controllers validate first; this is defence in depth for direct callers.
+      if (!SORTS.includes(sort)) throw badArg("sort must be listen|hot|new")
       const ct = ctime()
       return request(path, { id, type, page, count, sort, ctime: ct, sig: sigListMv(path, count, id, type, page, ct) })
    },
@@ -189,8 +221,7 @@ const zing = {
    },
    async searchByType(keyword, type, page = 1, count = 18) {
       const path = "/api/v2/search"
-      const validTypes = ["song", "playlist", "artist", "video"]
-      if (!validTypes.includes(type)) throw new Error("type must be song|playlist|artist|video")
+      if (!SEARCH_TYPES.includes(type)) throw badArg("type must be song|playlist|artist|video")
       const ct = ctime()
       return request(path, {
          q: keyword,
@@ -217,4 +248,4 @@ const zing = {
    },
 }
 
-module.exports = { zing }
+module.exports = { zing, SORTS, SEARCH_TYPES }
